@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>ICAM</title>
+  <style>
+    /* Design moderne avec thème sombre et accent turquoise */
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: 'Arial', sans-serif;
+      background-color: #121212;
+      color: #e0e0e0;
+    }
+    .container {
+      max-width: 1000px;
+      margin: auto;
+      background-color: #1e1e1e;
+      border: 2px solid #00adb5;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+    h1 {
+      text-align: center;
+      font-size: 2.5rem;
+      margin-bottom: 20px;
+      color: #00adb5;
+    }
+    .controls, .capture-controls {
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .controls input, .controls select, 
+    .capture-controls select, .capture-controls button {
+      padding: 8px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 4px;
+      margin: 5px;
+    }
+    .controls input {
+      width: 200px;
+    }
+    .controls select, .capture-controls select, .capture-controls button {
+      background-color: #00adb5;
+      color: #121212;
+      cursor: pointer;
+    }
+    .capture-controls button:hover, 
+    .controls select:hover, 
+    .capture-controls select:hover {
+      opacity: 0.9;
+    }
+    .video-container {
+      position: relative;
+      border: 2px solid #00adb5;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    video {
+      width: 100%;
+      display: block;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+    }
+    #output {
+      margin-top: 20px;
+    }
+    .object {
+      border: 1px solid #00adb5;
+      border-radius: 5px;
+      padding: 10px;
+      margin-bottom: 10px;
+      background-color: #272727;
+      box-shadow: 2px 2px 10px rgba(0,0,0,0.5);
+      transition: opacity 0.5s;
+    }
+    .object a {
+      color: #00adb5;
+      text-decoration: none;
+    }
+    #gallery {
+      margin-top: 20px;
+    }
+    #gallery h2 {
+      font-size: 1.5rem;
+      border-bottom: 1px solid #00adb5;
+      padding-bottom: 5px;
+      color: #00adb5;
+    }
+    .photo-container {
+      position: relative;
+      display: inline-block;
+      margin: 10px;
+    }
+    .photo-container img {
+      max-width: 200px;
+      border: 2px solid #00adb5;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .delete-button {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      background-color: #ff4c4c;
+      border: none;
+      color: white;
+      border-radius: 50%;
+      width: 25px;
+      height: 25px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    /* Modal pour l'analyse d'une photo */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 9999;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.8);
+    }
+    .modal-content {
+      position: relative;
+      margin: 5% auto;
+      padding: 20px;
+      width: 90%;
+      max-width: 600px;
+      background-color: #1e1e1e;
+      border: 2px solid #00adb5;
+      border-radius: 8px;
+      color: #e0e0e0;
+    }
+    .close-modal {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      color: #ff4c4c;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .analysis-container {
+      position: relative;
+      text-align: center;
+    }
+    #analysisImage {
+      width: 100%;
+      border-radius: 8px;
+    }
+    #analysisCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+    }
+    #analysisResults {
+      margin-top: 10px;
+    }
+  </style>
+  <!-- Inclusion de TensorFlow.js, du modèle COCO-SSD et GSAP -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.7.1/gsap.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>ICAM</h1>
+    <!-- Controls : Filtrer par objet et sélection du type de caméra -->
+    <div class="controls">
+      <input type="text" id="filterInput" placeholder="Filtrer par objet...">
+      <select id="facingModeSelect">
+        <option value="user">Caméra Frontale</option>
+        <option value="environment">Caméra Arrière</option>
+      </select>
+    </div>
+    <!-- Contrôles de capture : Prendre une photo et enregistrer une vidéo -->
+    <div class="capture-controls">
+      <button id="capturePhotoBtn">Prendre une photo</button>
+      <button id="recordVideoBtn">Enregistrer une vidéo</button>
+    </div>
+    <!-- Zone vidéo avec canvas d'analyse en direct -->
+    <div class="video-container">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="canvas"></canvas>
+    </div>
+    <!-- Affichage des informations d'analyse en direct -->
+    <div id="output">
+      <p>Initialisation de l'analyse...</p>
+    </div>
+    <!-- Galerie pour les photos et vidéos capturées -->
+    <div id="gallery">
+      <h2>Galerie</h2>
+    </div>
+  </div>
+  
+  <!-- Modal pour analyser une photo sélectionnée -->
+  <div id="analysisModal" class="modal">
+    <div class="modal-content">
+      <span class="close-modal">&times;</span>
+      <div class="analysis-container">
+        <img id="analysisImage" src="" alt="Photo pour analyse">
+        <canvas id="analysisCanvas"></canvas>
+        <div id="analysisResults"></div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // Sélection des éléments HTML
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const output = document.getElementById("output");
+    const filterInput = document.getElementById("filterInput");
+    const facingModeSelect = document.getElementById("facingModeSelect");
+    const capturePhotoBtn = document.getElementById("capturePhotoBtn");
+    const recordVideoBtn = document.getElementById("recordVideoBtn");
+    const gallery = document.getElementById("gallery");
+    const analysisModal = document.getElementById("analysisModal");
+    const closeModal = document.querySelector(".close-modal");
+    const analysisImage = document.getElementById("analysisImage");
+    const analysisCanvas = document.getElementById("analysisCanvas");
+    const analysisCtx = analysisCanvas.getContext("2d");
+    const analysisResults = document.getElementById("analysisResults");
+
+    let model;
+    let infoCache = {};  // Cache pour les infos enrichies
+    let fetching = {};   // Pour éviter les requêtes en double
+    let lastOutputUpdate = 0;
+    let currentStream;
+    let mediaRecorder = null;
+    let isRecording = false;
+    let recordedChunks = [];
+    let isDetecting = false;  // Pour contrôler la détection en boucle
+
+    // Clé API Google KG insérée
+    const KG_API_KEY = "AIzaSyCrB2A1f_uyNxQn0NmONv0hlST3OagEEdw";
+    
+    // Démarrer la caméra avec le mode souhaité (frontale ou arrière)
+    async function startCameraWithFacingMode(facingMode) {
+      try {
+        if (currentStream) {
+          currentStream.getTracks().forEach(track => track.stop());
+        }
+        const constraints = {
+          video: { facingMode: { exact: facingMode } },
+          audio: false
+        };
+        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = currentStream;
+      } catch (error) {
+        output.innerHTML = "<p>Erreur d'accès à la caméra. Vérifiez vos permissions.</p>";
+        console.error("Erreur caméra :", error);
+      }
+    }
+    
+    // Demande initiale de permission pour accéder à la caméra
+    async function requestCameraPermission() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        output.innerHTML = "<p>getUserMedia n'est pas supporté par votre navigateur.</p>";
+        return;
+      }
+      await startCameraWithFacingMode(facingModeSelect.value || "user");
+    }
+    
+    // Lors du changement de mode de caméra
+    facingModeSelect.addEventListener("change", async (e) => {
+      await startCameraWithFacingMode(e.target.value);
+    });
+    
+    // Ajuster la taille du canvas en fonction de la vidéo
+    video.addEventListener("loadedmetadata", () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    });
+    
+    // Requête vers l'API Google Knowledge Graph
+    async function fetchGoogleKG(label) {
+      try {
+        const res = await fetch(`https://kgsearch.googleapis.com/v1/entities:search?query=${encodeURIComponent(label)}&key=${KG_API_KEY}&limit=1&indent=True`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.itemListElement && data.itemListElement.length > 0) {
+            const result = data.itemListElement[0].result;
+            const description = result.detailedDescription ? result.detailedDescription.articleBody : result.description;
+            if (description) return description;
+          }
+        }
+      } catch (e) {
+        console.warn("Erreur API Google KG :", e);
+      }
+      return null;
+    }
+    
+    // Requête vers Wikipedia pour obtenir un résumé
+    async function fetchWikiSummary(label) {
+      try {
+        const res = await fetch(`https://fr.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(label)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.extract) return data.extract;
+        }
+      } catch (e) {
+        console.error("Erreur Wikipedia :", e);
+      }
+      return "Aucune description disponible.";
+    }
+    
+    // Obtenir des informations enrichies (KG puis Wikipedia)
+    async function getEnrichedInfo(label) {
+      if (infoCache[label]) return infoCache[label];
+      let info = await fetchGoogleKG(label);
+      if (!info) {
+        info = await fetchWikiSummary(label);
+      }
+      infoCache[label] = info;
+      return info;
+    }
+    
+    // Mettre à jour l'affichage d'un objet détecté dans le flux vidéo
+    function updateObjectInfo(prediction) {
+      const label = prediction.class;
+      const confidence = (prediction.score * 100).toFixed(2);
+      let element = document.getElementById("object-" + label);
+      
+      if (!element) {
+        element = document.createElement("div");
+        element.className = "object";
+        element.id = "object-" + label;
+        element.innerHTML = `<strong>${label}</strong> – Confiance : ${confidence}%<br>
+          <p class="info">Chargement de l'information...</p>
+          <a href="https://www.google.com/search?q=${encodeURIComponent(label)}" target="_blank">En savoir plus</a>`;
+        output.appendChild(element);
+        gsap.from(element, { duration: 0.5, opacity: 0, y: 10 });
+      } else {
+        element.innerHTML = `<strong>${label}</strong> – Confiance : ${confidence}%<br>
+          <p class="info">Chargement de l'information...</p>
+          <a href="https://www.google.com/search?q=${encodeURIComponent(label)}" target="_blank">En savoir plus</a>`;
+      }
+      
+      if (!infoCache[label] && !fetching[label]) {
+        fetching[label] = true;
+        getEnrichedInfo(label).then(info => {
+          const infoElem = element.querySelector(".info");
+          if (infoElem) {
+            gsap.to(infoElem, { duration: 0.5, opacity: 0, onComplete: () => {
+              infoElem.innerText = info;
+              gsap.fromTo(infoElem, { opacity: 0 }, { duration: 0.5, opacity: 1 });
+            }});
+          }
+        });
+      }
+    }
+    
+    // Mettre à jour l'affichage des objets détectés dans le flux vidéo
+    function updateOutputInfo(uniquePredictions) {
+      const filter = filterInput.value.trim().toLowerCase();
+      const currentLabels = uniquePredictions
+        .filter(item => item.class.toLowerCase().includes(filter))
+        .map(item => item.class);
+      document.querySelectorAll("#output .object").forEach(elem => {
+        const label = elem.id.replace("object-", "");
+        if (!currentLabels.includes(label)) {
+          gsap.to(elem, { duration: 0.5, opacity: 0, onComplete: () => { elem.remove(); } });
+        }
+      });
+      uniquePredictions.forEach(item => {
+        if (item.class.toLowerCase().includes(filter)) {
+          updateObjectInfo(item);
+        }
+      });
+    }
+    
+    // Boucle de détection d'objets sur le flux vidéo (avec throttling)
+    async function detectFrame() {
+      if (model && !isDetecting) {
+        isDetecting = true;
+        const predictions = await model.detect(video);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        predictions.forEach(prediction => {
+          const [x, y, width, height] = prediction.bbox;
+          ctx.strokeStyle = "#00adb5";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x, y, width, height);
+          ctx.fillStyle = "#00adb5";
+          ctx.font = "16px Arial";
+          ctx.fillText(prediction.class, x, y > 20 ? y - 5 : y + 15);
+        });
+        const uniquePredictions = {};
+        predictions.forEach(pred => {
+          if (!uniquePredictions[pred.class] || uniquePredictions[pred.class].score < pred.score) {
+            uniquePredictions[pred.class] = pred;
+          }
+        });
+        const uniqueArray = Object.values(uniquePredictions);
+        if (Date.now() - lastOutputUpdate > 1000) {
+          updateOutputInfo(uniqueArray);
+          lastOutputUpdate = Date.now();
+        }
+        isDetecting = false;
+      }
+      requestAnimationFrame(detectFrame);
+    }
+    
+    // Prendre une photo à partir du flux vidéo
+    capturePhotoBtn.addEventListener("click", () => {
+      if (video.videoWidth && video.videoHeight) {
+        const photoCanvas = document.createElement("canvas");
+        photoCanvas.width = video.videoWidth;
+        photoCanvas.height = video.videoHeight;
+        const photoCtx = photoCanvas.getContext("2d");
+        photoCtx.drawImage(video, 0, 0, photoCanvas.width, photoCanvas.height);
+        const imgData = photoCanvas.toDataURL("image/png");
+        addPhotoToGallery(imgData);
+      }
+    });
+    
+    // Ajouter la photo capturée à la galerie avec bouton de suppression et analyse au clic
+    function addPhotoToGallery(imgData) {
+      const photoContainer = document.createElement("div");
+      photoContainer.className = "photo-container";
+      const img = document.createElement("img");
+      img.src = imgData;
+      img.alt = "Photo capturée";
+      // Au clic sur la photo, ouvrir la modal pour l'analyser
+      img.addEventListener("click", () => {
+        analyzePhoto(imgData);
+      });
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "delete-button";
+      deleteBtn.innerText = "✖";
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        photoContainer.remove();
+      });
+      photoContainer.appendChild(img);
+      photoContainer.appendChild(deleteBtn);
+      gallery.appendChild(photoContainer);
+    }
+    
+    // Enregistrement vidéo avec MediaRecorder
+    recordVideoBtn.addEventListener("click", () => {
+      if (!isRecording) {
+        recordedChunks = [];
+        try {
+          mediaRecorder = new MediaRecorder(currentStream, { mimeType: "video/webm; codecs=vp9" });
+        } catch (e) {
+          console.error("Erreur lors de l'initialisation de MediaRecorder :", e);
+          return;
+        }
+        mediaRecorder.ondataavailable = event => {
+          if (event.data && event.data.size > 0) {
+            recordedChunks.push(event.data);
+          }
+        };
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(recordedChunks, { type: "video/webm" });
+          const videoURL = URL.createObjectURL(blob);
+          addVideoToGallery(videoURL);
+        };
+        mediaRecorder.start();
+        isRecording = true;
+        recordVideoBtn.innerText = "Arrêter l'enregistrement";
+      } else {
+        mediaRecorder.stop();
+        isRecording = false;
+        recordVideoBtn.innerText = "Enregistrer une vidéo";
+      }
+    });
+    
+    // Ajouter la vidéo enregistrée à la galerie avec bouton de suppression
+    function addVideoToGallery(videoURL) {
+      const videoContainer = document.createElement("div");
+      videoContainer.className = "photo-container";
+      const vid = document.createElement("video");
+      vid.src = videoURL;
+      vid.controls = true;
+      vid.style.maxWidth = "200px";
+      videoContainer.appendChild(vid);
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "delete-button";
+      deleteBtn.innerText = "✖";
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        videoContainer.remove();
+      });
+      videoContainer.appendChild(deleteBtn);
+      gallery.appendChild(videoContainer);
+    }
+    
+    // Analyser une photo statique à l'aide de COCO-SSD et afficher les résultats dans une modal
+    function analyzePhoto(imgData) {
+      analysisImage.src = imgData;
+      analysisResults.innerHTML = "<p>Analyse en cours...</p>";
+      analysisImage.onload = async () => {
+        // Adapter le canvas à la taille de l'image analysée
+        analysisCanvas.width = analysisImage.width;
+        analysisCanvas.height = analysisImage.height;
+        analysisCtx.clearRect(0, 0, analysisCanvas.width, analysisCanvas.height);
+        const predictions = await model.detect(analysisImage);
+        predictions.forEach(prediction => {
+          const [x, y, width, height] = prediction.bbox;
+          analysisCtx.strokeStyle = "#00adb5";
+          analysisCtx.lineWidth = 2;
+          analysisCtx.strokeRect(x, y, width, height);
+          analysisCtx.fillStyle = "#00adb5";
+          analysisCtx.font = "16px Arial";
+          analysisCtx.fillText(prediction.class, x, y > 20 ? y - 5 : y + 15);
+        });
+        if (predictions.length === 0) {
+          analysisResults.innerHTML = "<p>Aucun objet détecté.</p>";
+        } else {
+          analysisResults.innerHTML = "";
+          predictions.forEach(prediction => {
+            const infoDiv = document.createElement("div");
+            infoDiv.className = "object";
+            infoDiv.innerHTML = `<strong>${prediction.class}</strong> – Confiance : ${(prediction.score * 100).toFixed(2)}%<br>
+            <a href="https://www.google.com/search?q=${encodeURIComponent(prediction.class)}" target="_blank">En savoir plus</a>`;
+            analysisResults.appendChild(infoDiv);
+          });
+        }
+      };
+      analysisModal.style.display = "block";
+    }
+    
+    // Fermeture de la modal d'analyse
+    closeModal.addEventListener("click", () => {
+      analysisModal.style.display = "none";
+    });
+    window.addEventListener("click", (event) => {
+      if (event.target === analysisModal) {
+        analysisModal.style.display = "none";
+      }
+    });
+    
+    // Initialisation lors du chargement de la page
+    window.addEventListener("load", async () => {
+      await requestCameraPermission();
+      output.innerHTML = "<p>Chargement du modèle d'analyse...</p>";
+      model = await cocoSsd.load();
+      output.innerHTML = "<p>Modèle chargé. Analyse en cours...</p>";
+      detectFrame();
+    });
+  </script>
+</body>
+</html>
